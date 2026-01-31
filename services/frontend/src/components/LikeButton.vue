@@ -40,11 +40,17 @@ const handleLike = async () => {
   
   loading.value = true
   try {
-    const result = await postsStore.likePost(props.postSlug)
-    likesCount.value = result.likes_count
-    isLiked.value = result.is_liked
+    if (isLiked.value) {
+      await postsStore.unlikePost(props.postSlug)
+      likesCount.value = Math.max(0, likesCount.value - 1)
+      isLiked.value = false
+    } else {
+      await postsStore.likePost(props.postSlug)
+      likesCount.value += 1
+      isLiked.value = true
+    }
   } catch (err) {
-    console.error('Failed to like post:', err)
+    console.error('Failed to like/unlike post:', err)
   } finally {
     loading.value = false
   }

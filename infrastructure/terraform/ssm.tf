@@ -87,6 +87,19 @@ resource "aws_ssm_parameter" "service_urls" {
   })
 }
 
+# S3 Avatar Bucket Name
+resource "aws_ssm_parameter" "s3_avatar_bucket" {
+  name  = "/${local.name_prefix}/s3/avatar-bucket"
+  type  = "String"
+  value = "${local.name_prefix}-avatars-${data.aws_caller_identity.current.account_id}"
+
+  description = "S3 bucket name for user avatars"
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-s3-avatar-bucket"
+  })
+}
+
 # Output for SSM parameter ARNs
 output "ssm_db_password_arn" {
   description = "SSM Parameter ARN for database password"

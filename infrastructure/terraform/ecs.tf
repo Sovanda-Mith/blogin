@@ -21,7 +21,9 @@ locals {
       environment = [
         { name = "DATABASE_URL", value = "postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.main.address}:5432/blogin" },
         { name = "JWT_SECRET", value = var.jwt_secret_key },
-        { name = "SERVICE_NAME", value = "user-service" }
+        { name = "SERVICE_NAME", value = "user-service" },
+        { name = "AWS_REGION", value = var.aws_region },
+        { name = "S3_BUCKET_NAME", value = "${local.name_prefix}-avatars-${data.aws_caller_identity.current.account_id}" }
       ]
     }
     "post-service" = {
@@ -125,8 +127,8 @@ resource "aws_ecs_task_definition" "services" {
 
   container_definitions = jsonencode([
     {
-      name  = each.key
-      image = "${aws_ecr_repository.services[each.key].repository_url}:latest"
+      name      = each.key
+      image     = "${aws_ecr_repository.services[each.key].repository_url}:latest"
       essential = true
       portMappings = [
         {

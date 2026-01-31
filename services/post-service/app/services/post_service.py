@@ -15,6 +15,7 @@ users_profiles = Table(
     Base.metadata,
     Column("user_id", PGUUID(as_uuid=True), primary_key=True),
     Column("username", String(50)),
+    Column("avatar_url", String(500)),
     schema="users",
 )
 
@@ -143,10 +144,11 @@ def list_posts(
     skip: int = 0,
     limit: int = 20,
 ) -> tuple:
-    # Join with users.profiles to get username
-    # Note: Don't use joinedload here as it conflicts with explicit joins and column selection
+    # Join with users.profiles to get username and avatar
     query = db.query(
-        Post, users_profiles.c.username.label("author_username")
+        Post,
+        users_profiles.c.username.label("author_username"),
+        users_profiles.c.avatar_url.label("author_avatar"),
     ).outerjoin(users_profiles, Post.author_id == users_profiles.c.user_id)
 
     if status:
@@ -191,7 +193,11 @@ def get_posts_by_author(
     db: Session, author_id: uuid.UUID, skip: int = 0, limit: int = 20
 ) -> tuple:
     query = (
-        db.query(Post, users_profiles.c.username.label("author_username"))
+        db.query(
+            Post,
+            users_profiles.c.username.label("author_username"),
+            users_profiles.c.avatar_url.label("author_avatar"),
+        )
         .outerjoin(users_profiles, Post.author_id == users_profiles.c.user_id)
         .filter(Post.author_id == author_id, Post.status == "published")
     )

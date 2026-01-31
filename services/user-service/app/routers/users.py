@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, Form
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -24,6 +24,12 @@ from app.services.user_service import (
     search_profiles,
     get_all_profiles,
     username_exists,
+)
+from app.services.s3_service import (
+    generate_presigned_upload_url,
+    get_avatar_url,
+    delete_avatar,
+    validate_avatar_file,
 )
 from app.config import get_settings
 from jose import jwt, JWTError
@@ -249,6 +255,8 @@ async def get_my_profile(
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
+    avatar_url = get_avatar_url(str(user_id))
+
     return APIResponse(
         success=True,
         data={
@@ -256,10 +264,95 @@ async def get_my_profile(
             "username": profile.username,
             "display_name": profile.display_name,
             "bio": profile.bio,
-            "avatar_url": profile.avatar_url,
+            "avatar_url": avatar_url or profile.avatar_url,
             "created_at": profile.created_at.isoformat(),
             "updated_at": profile.updated_at.isoformat(),
         },
         message="Profile retrieved successfully",
+        errors=None,
+    )
+
+
+@router.post("/avatars/presigned", response_model=APIResponse)
+async def get_presigned_upload_url(
+    content_type: str = Form(...),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    token = credentials.credentials
+    user_id = get_current_user_id(token)
+
+    is_valid, error_message = validate_avatar_file(content_type, 0)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_message)
+
+    result = generate_presigned_upload_url(
+        user_id=str(user_id),
+        content_type=content_type,
+        expires_in=settings.S3_AVATAR_EXPIRATION,
+    )
+
+    return APIResponse(
+        success=True,
+        data=result,
+        message="Presigned upload URL generated successfully",
+        errors=None,
+    )
+
+
+@router.put("/avatars/me", response_model=APIResponse)
+async def update_avatar(
+    key: str = Form(...),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+):
+    token = credentials.credentials
+    user_id = get_current_user_id(token)
+
+    profile = get_profile_by_user_id(db, user_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    avatar_url = f"https://{settings.S3_BUCKET_NAME}.s3.{settings.AWS_REGION}.amazonaws.com/{key}"
+
+    profile_update = UserProfileUpdate(avatar_url=avatar_url)
+    updated_profile = update_profile(db, user_id, profile_update)
+
+    return APIResponse(
+        success=True,
+        data={
+            "user_id": str(updated_profile.user_id),
+            "username": updated_profile.username,
+            "display_name": updated_profile.display_name,
+            "bio": updated_profile.bio,
+            "avatar_url": avatar_url,
+            "created_at": updated_profile.created_at.isoformat(),
+            "updated_at": updated_profile.updated_at.isoformat(),
+        },
+        message="Avatar updated successfully",
+        errors=None,
+    )
+
+
+@router.delete("/avatars/me", response_model=APIResponse)
+async def delete_avatar_endpoint(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+):
+    token = credentials.credentials
+    user_id = get_current_user_id(token)
+
+    profile = get_profile_by_user_id(db, user_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    delete_avatar(str(user_id))
+
+    profile_update = UserProfileUpdate(avatar_url=None)
+    update_profile(db, user_id, profile_update)
+
+    return APIResponse(
+        success=True,
+        data=None,
+        message="Avatar deleted successfully",
         errors=None,
     )

@@ -48,7 +48,7 @@ const readTime = computed(() => {
       <div class="post-header">
         <div class="post-author">
           <img 
-            :src="'/default-avatar.png'" 
+            :src="post.author_avatar || '/default-avatar.png'" 
             :alt="post.author_username || 'Author'"
             class="author-avatar"
           />

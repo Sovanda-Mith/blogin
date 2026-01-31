@@ -20,3 +20,6 @@ class Comment(Base):
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
     edited_at = Column(DateTime, nullable=True)
+    author_username = Column(String(50), nullable=True)
+    author_display_name = Column(String(100), nullable=True)
+    author_avatar_url = Column(String(500), nullable=True)

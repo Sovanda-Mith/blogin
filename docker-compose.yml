@@ -59,6 +59,8 @@ services:
       AUTH_SERVICE_URL: ${AUTH_SERVICE_URL}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-blogin-avatars}
     ports:
       - "8002:8000"
     networks:

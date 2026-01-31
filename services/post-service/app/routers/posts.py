@@ -75,6 +75,7 @@ async def list_all_posts(
                     "id": str(post.id),
                     "author_id": str(post.author_id),
                     "author_username": username,
+                    "author_avatar": avatar_url,
                     "title": post.title,
                     "slug": post.slug,
                     "summary": post.summary,
@@ -89,7 +90,7 @@ async def list_all_posts(
                     if post.published_at
                     else None,
                 }
-                for post, username in results
+                for post, username, avatar_url in results
             ],
             "pagination": {
                 "total": total,
@@ -114,14 +115,17 @@ async def get_post(slug: str, db: Session = Depends(get_db)):
     # Increment view count
     increment_view_count(db, post.id)
 
-    # Get author username
+    # Get author info
     from sqlalchemy import text
 
     result = db.execute(
-        text("SELECT username FROM users.profiles WHERE user_id = :user_id"),
+        text(
+            "SELECT username, avatar_url FROM users.profiles WHERE user_id = :user_id"
+        ),
         {"user_id": str(post.author_id)},
     ).fetchone()
     author_username = result[0] if result else None
+    author_avatar = result[1] if result else None
 
     return APIResponse(
         success=True,
@@ -129,6 +133,7 @@ async def get_post(slug: str, db: Session = Depends(get_db)):
             "id": str(post.id),
             "author_id": str(post.author_id),
             "author_username": author_username,
+            "author_avatar": author_avatar,
             "title": post.title,
             "slug": post.slug,
             "content": post.content,
@@ -302,6 +307,7 @@ async def get_posts_by_author_id(
                     "id": str(post.id),
                     "author_id": str(post.author_id),
                     "author_username": username,
+                    "author_avatar": avatar_url,
                     "title": post.title,
                     "slug": post.slug,
                     "summary": post.summary,
@@ -316,7 +322,7 @@ async def get_posts_by_author_id(
                     if post.published_at
                     else None,
                 }
-                for post, username in results
+                for post, username, avatar_url in results
             ],
             "pagination": {
                 "total": total,

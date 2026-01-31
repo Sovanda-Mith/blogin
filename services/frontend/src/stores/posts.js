@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '@/api/axios'
+import { useAuthStore } from '@/stores/auth'
 
 export const usePostsStore = defineStore('posts', () => {
   // State
@@ -61,18 +62,50 @@ export const usePostsStore = defineStore('posts', () => {
   const fetchPost = async (slug) => {
     loading.value = true
     error.value = null
+    currentPost.value = null
     
     try {
       const response = await api.get(`/posts/${slug}/`)
-      // API returns { success, data: {...}, message, errors }
       const postData = response.data.data || response.data
       currentPost.value = postData
+      
+      const authStore = useAuthStore()
+      if (authStore.isAuthenticated) {
+        try {
+          const likeStatus = await getLikeStatus(slug)
+          currentPost.value.is_liked = likeStatus.liked
+          currentPost.value.likes_count = likeStatus.count
+        } catch (e) {
+          console.error('Failed to fetch like status:', e)
+        }
+      }
+      
       return postData
     } catch (err) {
-      error.value = err.response?.data?.detail || 'Failed to fetch post'
+      if (err.response) {
+        error.value = err.response.data?.detail || err.response.data?.message || err.message || 'Failed to fetch post'
+      } else if (err.request) {
+        error.value = 'No response from server'
+      } else {
+        error.value = err.message || 'Failed to fetch post'
+      }
       throw err
     } finally {
       loading.value = false
+    }
+  }
+
+  const getLikeStatus = async (slug) => {
+    try {
+      const response = await api.get(`/likes/status?post_slug=${slug}`)
+      const countResponse = await api.get(`/likes/count?post_slug=${slug}`)
+      return {
+        liked: response.data.data?.liked || false,
+        count: countResponse.data.data?.count || 0
+      }
+    } catch (err) {
+      console.error('Failed to get like status:', err)
+      return { liked: false, count: 0 }
     }
   }
 
@@ -140,25 +173,42 @@ export const usePostsStore = defineStore('posts', () => {
 
   const fetchComments = async (postId) => {
     try {
-      const response = await api.get(`/comments/post/${postId}/`)
-      comments.value = response.data
-      return response.data
+      const response = await api.get(`/posts/${postId}/comments/all/`)
+      comments.value = response.data.data?.items || []
+      return comments.value
     } catch (err) {
       console.error('Failed to fetch comments:', err)
       throw err
     }
   }
 
-  const addComment = async (postId, commentData) => {
+  const addComment = async (postId, content, parentId = null) => {
     try {
-      const response = await api.post(`/comments/`, {post_id: postId, ...commentData})
-      comments.value.unshift(response.data)
-      
-      if (currentPost.value) {
-        currentPost.value.comments_count++
-      }
-      
-      return response.data
+      const response = await api.post(`/comments`, {
+        post_id: postId,
+        content: content,
+        parent_id: parentId
+      })
+      await fetchComments(postId)
+      return response.data.data
+    } catch (err) {
+      throw err
+    }
+  }
+
+  const editComment = async (commentId, content) => {
+    try {
+      const response = await api.put(`/comments/${commentId}/`, { content })
+      return response.data.data
+    } catch (err) {
+      throw err
+    }
+  }
+
+  const deleteComment = async (commentId) => {
+    try {
+      await api.delete(`/comments/${commentId}/`)
+      return true
     } catch (err) {
       throw err
     }
@@ -166,17 +216,38 @@ export const usePostsStore = defineStore('posts', () => {
 
   const likePost = async (slug) => {
     try {
-      const response = await api.post(`/likes/`, {post_id: slug})
+      const response = await api.post(`/likes/`, { post_slug: slug })
       
       if (currentPost.value?.slug === slug) {
-        currentPost.value.likes_count = response.data.likes_count
-        currentPost.value.is_liked = response.data.is_liked
+        currentPost.value.likes_count = response.data.data?.count || response.data.data?.likes_count
+        currentPost.value.is_liked = response.data.data?.liked || true
       }
       
       const post = posts.value.find(p => p.slug === slug)
       if (post) {
-        post.likes_count = response.data.likes_count
-        post.is_liked = response.data.is_liked
+        post.likes_count = response.data.data?.count || post.likes_count
+        post.is_liked = response.data.data?.liked || post.is_liked
+      }
+      
+      return response.data.data || response.data
+    } catch (err) {
+      throw err
+    }
+  }
+
+  const unlikePost = async (slug) => {
+    try {
+      const response = await api.delete(`/likes/${slug}`)
+      
+      if (currentPost.value?.slug === slug) {
+        currentPost.value.likes_count = Math.max(0, (currentPost.value.likes_count || 1) - 1)
+        currentPost.value.is_liked = false
+      }
+      
+      const post = posts.value.find(p => p.slug === slug)
+      if (post) {
+        post.likes_count = Math.max(0, (post.likes_count || 1) - 1)
+        post.is_liked = false
       }
       
       return response.data
@@ -211,7 +282,11 @@ export const usePostsStore = defineStore('posts', () => {
     deletePost,
     fetchComments,
     addComment,
+    editComment,
+    deleteComment,
     likePost,
+    unlikePost,
+    getLikeStatus,
     resetPosts
   }
 })

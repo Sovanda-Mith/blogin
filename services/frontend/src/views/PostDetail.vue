@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -15,6 +15,9 @@ const authStore = useAuthStore()
 
 const slug = computed(() => route.params.slug)
 const post = computed(() => postsStore.currentPost)
+const loading = computed(() => postsStore.loading)
+const error = computed(() => postsStore.error)
+const comments = computed(() => postsStore.comments)
 
 const sanitizedContent = computed(() => {
   if (!post.value?.content) return ''
@@ -38,8 +41,13 @@ const readTime = computed(() => {
   return `${minutes} min read`
 })
 
+const commentsCount = computed(() => {
+  return comments.value.length || post.value?.comments_count || 0
+})
+
 const isAuthor = computed(() => {
-  return authStore.currentUser?.id === post.value?.author_id
+  if (!authStore.currentUser || !post.value?.author_id) return false
+  return authStore.currentUser.id === post.value.author_id
 })
 
 const handleDelete = async () => {
@@ -53,21 +61,27 @@ const handleDelete = async () => {
   }
 }
 
-onMounted(() => {
-  postsStore.fetchPost(slug.value)
+onMounted(async () => {
+  console.log('Fetching post:', slug.value)
+  try {
+    await postsStore.fetchPost(slug.value)
+    console.log('Post loaded:', post.value)
+  } catch (err) {
+    console.error('Error loading post:', err)
+  }
 })
 </script>
 
 <template>
   <div class="post-detail">
     <div class="container">
-      <div v-if="postsStore.loading" class="loading-container">
+      <div v-if="loading" class="loading-container">
         <span class="loading-spinner large"></span>
         <p>Loading post...</p>
       </div>
       
-      <div v-else-if="postsStore.error" class="error-alert">
-        {{ postsStore.error }}
+      <div v-else-if="error" class="error-alert">
+        {{ error }}
         <RouterLink to="/" class="btn btn-secondary btn-sm">Go Home</RouterLink>
       </div>
       
@@ -80,7 +94,7 @@ onMounted(() => {
               v-if="post.author_username"
             >
               <img 
-                :src="'/default-avatar.png'" 
+                :src="post.author_avatar || '/default-avatar.png'" 
                 :alt="post.author_username"
                 class="author-avatar"
               />
@@ -130,11 +144,11 @@ onMounted(() => {
           <div class="post-stats">
             <LikeButton 
               :post-slug="post.slug" 
-              :initial-likes="post.likes_count"
-              :initial-liked="post.is_liked"
+              :initial-likes="post.likes_count || 0"
+              :initial-liked="post.is_liked || false"
             />
             <span class="stat">
-              💬 {{ post.comments_count || 0 }} comments
+              💬 {{ commentsCount }} comments
             </span>
           </div>
         </footer>

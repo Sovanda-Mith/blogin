@@ -2,6 +2,8 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import api from '@/api/axios'
+import axios from 'axios'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -16,11 +18,67 @@ const form = ref({
 
 const errors = ref({})
 const successMessage = ref('')
+const avatarPreview = ref(authStore.currentUser?.avatar || null)
+const avatarUploading = ref(false)
+const avatarError = ref('')
 
-const handleAvatarChange = (event) => {
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+const MAX_SIZE = 5 * 1024 * 1024
+
+const handleAvatarChange = async (event) => {
   const file = event.target.files[0]
-  if (file) {
-    form.value.avatar = file
+  if (!file) return
+
+  avatarError.value = ''
+
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    avatarError.value = 'Invalid file type. Please upload a JPEG, PNG, GIF, or WebP image.'
+    return
+  }
+
+  if (file.size > MAX_SIZE) {
+    avatarError.value = 'File too large. Maximum size is 5MB.'
+    return
+  }
+
+  form.value.avatar = file
+  avatarPreview.value = URL.createObjectURL(file)
+  await uploadAvatar(file)
+}
+
+const uploadAvatar = async (file) => {
+  avatarUploading.value = true
+  avatarError.value = ''
+
+  try {
+    const presignedResponse = await api.post('/users/avatars/presigned', {
+      content_type: file.type
+    })
+
+    const { upload_url, key } = presignedResponse.data.data
+
+    await axios.put(upload_url, file, {
+      headers: {
+        'Content-Type': file.type
+      }
+    })
+
+    await api.put('/users/avatars/me', { key })
+
+    await authStore.fetchCurrentUser()
+    avatarPreview.value = authStore.currentUser?.avatar
+
+    successMessage.value = 'Avatar updated successfully!'
+    setTimeout(() => {
+      successMessage.value = ''
+    }, 3000)
+  } catch (err) {
+    console.error('Avatar upload failed:', err)
+    avatarError.value = err.response?.data?.detail || 'Failed to upload avatar'
+    avatarPreview.value = authStore.currentUser?.avatar || null
+  } finally {
+    avatarUploading.value = false
+    form.value.avatar = null
   }
 }
 
@@ -60,11 +118,25 @@ const handleLogout = async () => {
       <div class="profile-layout">
         <aside class="profile-sidebar">
           <div class="profile-card">
-            <img 
-              :src="authStore.currentUser?.avatar || '/default-avatar.png'" 
-              :alt="authStore.currentUser?.username"
-              class="profile-avatar"
-            />
+            <div class="avatar-upload-container">
+              <img 
+                :src="avatarPreview || authStore.currentUser?.avatar || '/default-avatar.png'" 
+                :alt="authStore.currentUser?.username"
+                class="profile-avatar"
+              />
+              <label class="avatar-upload-btn" :class="{ 'uploading': avatarUploading }">
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  max-size="5242880"
+                  @change="handleAvatarChange"
+                  :disabled="avatarUploading"
+                />
+                <span v-if="avatarUploading">Uploading...</span>
+                <span v-else>Change Avatar</span>
+              </label>
+            </div>
+            <p v-if="avatarError" class="avatar-error">{{ avatarError }}</p>
             <h2 class="profile-name">{{ authStore.currentUser?.full_name || authStore.currentUser?.username }}</h2>
             <p class="profile-username">@{{ authStore.currentUser?.username }}</p>
             <p v-if="authStore.currentUser?.bio" class="profile-bio">
@@ -194,6 +266,45 @@ const handleLogout = async () => {
   object-fit: cover;
   margin-bottom: 1rem;
   border: 4px solid var(--bg-secondary);
+}
+
+.avatar-upload-container {
+  position: relative;
+  display: inline-block;
+}
+
+.avatar-upload-btn {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--primary-color);
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius);
+  font-size: 0.75rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.avatar-upload-container:hover .avatar-upload-btn {
+  opacity: 1;
+}
+
+.avatar-upload-btn input {
+  display: none;
+}
+
+.avatar-upload-btn.uploading {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.avatar-error {
+  color: var(--danger-color);
+  font-size: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 
 .profile-name {

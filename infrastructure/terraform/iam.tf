@@ -145,6 +145,34 @@ resource "aws_iam_role_policy" "ecs_task_xray" {
   })
 }
 
+# Task role policy for S3 avatar uploads
+resource "aws_iam_role_policy" "ecs_task_s3" {
+  name = "${local.name_prefix}-ecs-task-s3"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject"
+        ]
+        Resource = "arn:aws:s3:::${local.name_prefix}-avatars-*/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket"
+        ]
+        Resource = "arn:aws:s3:::${local.name_prefix}-avatars-*"
+      }
+    ]
+  })
+}
+
 # Output for IAM role ARNs
 output "ecs_task_execution_role_arn" {
   description = "ECS Task Execution Role ARN"

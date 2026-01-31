@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     AUTH_SERVICE_URL: str = "http://auth-service:8000"
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"
+    AWS_REGION: str = "us-east-1"
+    S3_BUCKET_NAME: str = "blogin-avatars"
+    S3_AVATAR_EXPIRATION: int = 3600
 
     class Config:
         env_file = ".env"

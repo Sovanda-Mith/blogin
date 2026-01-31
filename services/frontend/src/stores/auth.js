@@ -130,11 +130,29 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
     
     try {
-      const response = await api.put('/auth/profile', profileData)
-      user.value = { ...user.value, ...response.data }
-      return response.data
+      const response = await api.put('/users/profiles/me', profileData)
+      user.value = { ...user.value, ...response.data.data }
+      return response.data.data
     } catch (err) {
       error.value = err.response?.data?.detail || 'Failed to update profile'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const updateAvatar = async (avatarUrl) => {
+    loading.value = true
+    error.value = null
+    
+    try {
+      const response = await api.put('/users/avatars/me', { avatar_url: avatarUrl })
+      if (user.value) {
+        user.value.avatar = avatarUrl
+      }
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.detail || 'Failed to update avatar'
       throw err
     } finally {
       loading.value = false
@@ -156,6 +174,7 @@ export const useAuthStore = defineStore('auth', () => {
     fetchCurrentUser,
     initializeAuth,
     updateProfile,
+    updateAvatar,
     setAuth,
     clearAuth
   }

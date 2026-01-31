@@ -6,10 +6,7 @@ from app.database import get_db
 from app.schemas import (
     CommentCreate,
     CommentUpdate,
-    CommentResponse,
-    CommentWithReplies,
     APIResponse,
-    PaginatedResponse,
 )
 from app.services.comment_service import CommentService
 from app.routers.dependencies import get_current_user
@@ -21,7 +18,7 @@ def get_comment_service(db: Session = Depends(get_db)):
     return CommentService(db)
 
 
-@router.post("", response_model=APIResponse[CommentResponse])
+@router.post("")
 def create_comment(
     comment_in: CommentCreate,
     current_user: dict = Depends(get_current_user),
@@ -31,12 +28,13 @@ def create_comment(
         comment = service.create(
             obj_in=comment_in, author_id=uuid.UUID(current_user["user_id"])
         )
-        return APIResponse(data=comment)
+        comment_dict = service._comment_to_dict(comment)
+        return APIResponse(data=comment_dict)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/post/{post_id}", response_model=PaginatedResponse[list])
+@router.get("/post/{post_id}")
 def get_comments_by_post(
     post_id: uuid.UUID,
     page: int = Query(1, ge=1),
@@ -45,27 +43,41 @@ def get_comments_by_post(
 ):
     result = service.get_by_post(post_id=post_id, page=page, page_size=page_size)
 
+    items = [service._comment_to_dict(c) for c in result["items"]]
+
     total_pages = (result["total"] + page_size - 1) // page_size
 
-    return PaginatedResponse(
-        data=result["items"],
-        total=result["total"],
-        page=result["page"],
-        page_size=result["page_size"],
-        total_pages=total_pages,
+    return APIResponse(
+        data={
+            "items": items,
+            "total": result["total"],
+            "page": result["page"],
+            "page_size": result["page_size"],
+            "total_pages": total_pages,
+        }
     )
 
 
-@router.post("/post/{post_id}", response_model=APIResponse[CommentResponse])
+@router.get("/post/{post_id}/all")
+def get_all_comments_by_post(
+    post_id: uuid.UUID,
+    service: CommentService = Depends(get_comment_service),
+):
+    comments = service.get_all_comments_by_post(post_id)
+
+    items = [service._comment_to_dict(c) for c in comments]
+
+    return APIResponse(data={"items": items, "total": len(items)})
+
+
+@router.post("/post/{post_id}")
 def create_comment_by_post(
     post_id: uuid.UUID,
     comment_in: CommentCreate,
     current_user: dict = Depends(get_current_user),
     service: CommentService = Depends(get_comment_service),
 ):
-    """Create a comment on a specific post (post_id from URL)"""
     try:
-        # Override post_id from URL
         comment_data = comment_in.model_dump()
         comment_data["post_id"] = post_id
         from app.schemas import CommentCreate as CommentCreateSchema
@@ -75,12 +87,13 @@ def create_comment_by_post(
         comment = service.create(
             obj_in=comment_with_post, author_id=uuid.UUID(current_user["user_id"])
         )
-        return APIResponse(data=comment)
+        comment_dict = service._comment_to_dict(comment)
+        return APIResponse(data=comment_dict)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/{comment_id}", response_model=APIResponse[CommentWithReplies])
+@router.get("/{comment_id}")
 def get_comment(
     comment_id: uuid.UUID,
     include_replies: bool = Query(True),
@@ -96,10 +109,10 @@ def get_comment(
         comment_tree = service.build_comment_tree(comment)
         return APIResponse(data=comment_tree)
 
-    return APIResponse(data=comment)
+    return APIResponse(data=service._comment_to_dict(comment))
 
 
-@router.put("/{comment_id}", response_model=APIResponse[CommentResponse])
+@router.put("/{comment_id}")
 def update_comment(
     comment_id: uuid.UUID,
     comment_in: CommentUpdate,
@@ -119,10 +132,10 @@ def update_comment(
         )
 
     updated_comment = service.update(comment, comment_in)
-    return APIResponse(data=updated_comment)
+    return APIResponse(data=service._comment_to_dict(updated_comment))
 
 
-@router.delete("/{comment_id}", response_model=APIResponse[dict])
+@router.delete("/{comment_id}")
 def delete_comment(
     comment_id: uuid.UUID,
     current_user: dict = Depends(get_current_user),
@@ -138,7 +151,7 @@ def delete_comment(
             detail="Comment not found or not authorized",
         )
 
-    return APIResponse(data={"deleted": True})
+    return APIResponse(data={"deleted": True, "id": str(comment_id)})
 
 
 @router.get("/post/{post_id}/count", response_model=APIResponse[dict])

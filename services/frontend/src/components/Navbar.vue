@@ -22,7 +22,14 @@ const handleLogout = async () => {
         
         <template v-if="authStore.isAuthenticated">
           <RouterLink to="/posts/create" class="nav-link">Write</RouterLink>
-          <RouterLink to="/profile" class="nav-link">
+          <RouterLink to="/profile" class="nav-link nav-user">
+            <img 
+              v-if="authStore.currentUser?.avatar"
+              :src="authStore.currentUser.avatar" 
+              :alt="authStore.currentUser.username"
+              class="nav-avatar"
+            />
+            <span v-else class="nav-avatar-placeholder">{{ authStore.currentUser?.username?.charAt(0).toUpperCase() }}</span>
             {{ authStore.currentUser?.username }}
           </RouterLink>
           <button @click="handleLogout" class="btn btn-sm btn-secondary" :disabled="authStore.loading">
@@ -90,6 +97,32 @@ const handleLogout = async () => {
 
 .nav-link.router-link-active {
   color: var(--primary-color);
+}
+
+.nav-user {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.nav-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.nav-avatar-placeholder {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: var(--primary-color);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 @media (max-width: 640px) {
