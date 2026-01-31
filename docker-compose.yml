@@ -1,0 +1,189 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-blogin_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-blogin_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-blogin}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./services/auth-service/migrations:/migrations/auth
+      - ./services/user-service/migrations:/migrations/user
+      - ./services/post-service/migrations:/migrations/post
+      - ./services/comment-service/migrations:/migrations/comment
+      - ./services/like-service/migrations:/migrations/like
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    ports:
+      - "5432:5432"
+    networks:
+      - blogin-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blogin_user -d blogin"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8001:8000"
+    networks:
+      - blogin-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./services/auth-service/app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  user-service:
+    build:
+      context: ./services/user-service
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8002:8000"
+    networks:
+      - blogin-network
+    depends_on:
+      - auth-service
+      - postgres
+    volumes:
+      - ./services/user-service/app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  post-service:
+    build:
+      context: ./services/post-service
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL}
+      USER_SERVICE_URL: ${USER_SERVICE_URL}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8003:8000"
+    networks:
+      - blogin-network
+    depends_on:
+      - auth-service
+      - user-service
+      - postgres
+    volumes:
+      - ./services/post-service/app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  comment-service:
+    build:
+      context: ./services/comment-service
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL}
+      POST_SERVICE_URL: ${POST_SERVICE_URL}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8004:8000"
+    networks:
+      - blogin-network
+    depends_on:
+      - auth-service
+      - post-service
+      - postgres
+    volumes:
+      - ./services/comment-service/app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  like-service:
+    build:
+      context: ./services/like-service
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL}
+      POST_SERVICE_URL: ${POST_SERVICE_URL}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8005:8000"
+    networks:
+      - blogin-network
+    depends_on:
+      - auth-service
+      - post-service
+      - postgres
+    volumes:
+      - ./services/like-service/app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+      target: development
+    ports:
+      - "3000:3000"
+    networks:
+      - blogin-network
+    depends_on:
+      - auth-service
+      - user-service
+      - post-service
+      - comment-service
+      - like-service
+    volumes:
+      - ./services/frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8080/api
+
+  gateway:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    networks:
+      - blogin-network
+    depends_on:
+      - auth-service
+      - user-service
+      - post-service
+      - comment-service
+      - like-service
+      - frontend
+    volumes:
+      - ./services/gateway/nginx.local.conf:/etc/nginx/conf.d/default.conf
+
+volumes:
+  postgres_data:
+
+networks:
+  blogin-network:
+    driver: bridge

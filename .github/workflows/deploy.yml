@@ -1,0 +1,129 @@
+name: Deploy to AWS ECS
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  ECS_CLUSTER: blogin-dev
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install Python dependencies
+      run: |
+        pip install ruff pytest
+        cd services/auth-service && pip install -r requirements.txt
+        cd ../user-service && pip install -r requirements.txt
+        cd ../post-service && pip install -r requirements.txt
+        cd ../comment-service && pip install -r requirements.txt
+        cd ../like-service && pip install -r requirements.txt
+
+    - name: Run linters
+      run: |
+        ruff check services/auth-service/app
+        ruff check services/user-service/app
+        ruff check services/post-service/app
+        ruff check services/comment-service/app
+        ruff check services/like-service/app
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install and build frontend
+      run: |
+        cd services/frontend
+        npm ci
+        npm run build
+
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build and push auth-service
+      run: |
+        docker build -t $ECR_REGISTRY/blogin-auth-service:${{ github.sha }} -t $ECR_REGISTRY/blogin-auth-service:latest services/auth-service
+        docker push $ECR_REGISTRY/blogin-auth-service:${{ github.sha }}
+        docker push $ECR_REGISTRY/blogin-auth-service:latest
+
+    - name: Build and push user-service
+      run: |
+        docker build -t $ECR_REGISTRY/blogin-user-service:${{ github.sha }} -t $ECR_REGISTRY/blogin-user-service:latest services/user-service
+        docker push $ECR_REGISTRY/blogin-user-service:${{ github.sha }}
+        docker push $ECR_REGISTRY/blogin-user-service:latest
+
+    - name: Build and push post-service
+      run: |
+        docker build -t $ECR_REGISTRY/blogin-post-service:${{ github.sha }} -t $ECR_REGISTRY/blogin-post-service:latest services/post-service
+        docker push $ECR_REGISTRY/blogin-post-service:${{ github.sha }}
+        docker push $ECR_REGISTRY/blogin-post-service:latest
+
+    - name: Build and push comment-service
+      run: |
+        docker build -t $ECR_REGISTRY/blogin-comment-service:${{ github.sha }} -t $ECR_REGISTRY/blogin-comment-service:latest services/comment-service
+        docker push $ECR_REGISTRY/blogin-comment-service:${{ github.sha }}
+        docker push $ECR_REGISTRY/blogin-comment-service:latest
+
+    - name: Build and push like-service
+      run: |
+        docker build -t $ECR_REGISTRY/blogin-like-service:${{ github.sha }} -t $ECR_REGISTRY/blogin-like-service:latest services/like-service
+        docker push $ECR_REGISTRY/blogin-like-service:${{ github.sha }}
+        docker push $ECR_REGISTRY/blogin-like-service:latest
+
+    - name: Build and push gateway
+      run: |
+        docker build -t $ECR_REGISTRY/blogin-gateway:${{ github.sha }} -t $ECR_REGISTRY/blogin-gateway:latest services/gateway
+        docker push $ECR_REGISTRY/blogin-gateway:${{ github.sha }}
+        docker push $ECR_REGISTRY/blogin-gateway:latest
+
+    - name: Build and push frontend
+      run: |
+        docker build -t $ECR_REGISTRY/blogin-frontend:${{ github.sha }} -t $ECR_REGISTRY/blogin-frontend:latest services/frontend
+        docker push $ECR_REGISTRY/blogin-frontend:${{ github.sha }}
+        docker push $ECR_REGISTRY/blogin-frontend:latest
+
+    - name: Update ECS services
+      run: |
+        aws ecs update-service --cluster $ECS_CLUSTER --service auth-service --force-new-deployment
+        aws ecs update-service --cluster $ECS_CLUSTER --service user-service --force-new-deployment
+        aws ecs update-service --cluster $ECS_CLUSTER --service post-service --force-new-deployment
+        aws ecs update-service --cluster $ECS_CLUSTER --service comment-service --force-new-deployment
+        aws ecs update-service --cluster $ECS_CLUSTER --service like-service --force-new-deployment
+        aws ecs update-service --cluster $ECS_CLUSTER --service gateway --force-new-deployment
+        aws ecs update-service --cluster $ECS_CLUSTER --service frontend --force-new-deployment
+
+    - name: Wait for services to stabilize
+      run: |
+        aws ecs wait services-stable --cluster $ECS_CLUSTER --services auth-service user-service post-service comment-service like-service gateway frontend
